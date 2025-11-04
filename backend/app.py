@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
+from calculations import compute_weighted_average
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +18,28 @@ def get_stations():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
+@app.route("/api/stations/<station_id>", methods=["GET"])
+def get_station_detail(station_id):
+    """Proxy verso l’API upstream per ottenere il dettaglio di una stazione
+       + aggiunge la media ponderata degli ultimi 7 giorni per ogni metrica
+    """
+    try:
+        r = requests.get(f"{BASE_URL}/stations/{station_id}", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        # ciclo su tutte le metriche disponibili
+        metrics = data.get("metrics", {})
+        for metric_name, metric_data in metrics.items():
+            days = metric_data.get("daily", [])
+            wa = compute_weighted_average(days)
+            metric_data["weighted_average_last7"] = wa
+
+        data["metrics"] = metrics
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
